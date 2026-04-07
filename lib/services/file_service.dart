@@ -5,6 +5,47 @@ import 'package:noteapp/models/note.dart';
 
 class FileService {
   static const String _defaultFolderName = 'docs';
+  static const String _welcomeNoteFileName = 'Welcome to NoteApp.md';
+  static const String _welcomeNoteContent = '''# Welcome to NoteApp
+
+你好，欢迎使用 NoteApp。
+
+这是一篇自动创建的初始笔记，帮助你快速上手。
+
+## 30 秒上手
+
+1. 回到首页，点击右下角“新建笔记”
+2. 输入标题并开始记录
+3. 在编辑区输入 Markdown，右侧可实时预览
+
+## AI 功能（可选）
+
+如果你想使用润色、摘要、续写：
+
+1. 打开右上角 Settings
+2. 填写 API Base URL、API Key、Model
+3. 先“测试连接”，再“保存配置”
+
+## 数据存储说明
+
+- 你的笔记默认保存在本机文档目录下的 `docs` 文件夹
+- 你可以在 Settings 中切换到任何本地目录
+- API Key 使用系统安全存储保存
+
+## 试试看
+
+下面是一段 Markdown 示例：
+
+```markdown
+## 今日待办
+
+- [ ] 完成第一篇笔记
+- [ ] 配置 AI（可选）
+- [ ] 试试搜索功能
+```
+
+祝你使用愉快。
+''';
   late Directory notesDirectory;
 
   String get storagePath => notesDirectory.path;
@@ -25,6 +66,25 @@ class FileService {
     // 如果文件夹不存在则创建
     if (!await notesDirectory.exists()) {
       await notesDirectory.create(recursive: true);
+    }
+
+    await _ensureWelcomeNoteExists();
+  }
+
+  Future<void> _ensureWelcomeNoteExists() async {
+    final files = notesDirectory.listSync();
+    final hasMarkdownNotes = files.any(
+      (file) => file is File && file.path.toLowerCase().endsWith('.md'),
+    );
+    if (hasMarkdownNotes) {
+      return;
+    }
+
+    final welcomeFile = File(
+      '${notesDirectory.path}${Platform.pathSeparator}$_welcomeNoteFileName',
+    );
+    if (!await welcomeFile.exists()) {
+      await welcomeFile.writeAsString(_welcomeNoteContent);
     }
   }
 
