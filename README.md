@@ -84,9 +84,6 @@ flutter devices
 
 # Windows 桌面
 flutter run -d windows
-
-# Android（连接设备或启动模拟器后）
-flutter run -d android
 ```
 
 ## 使用说明
@@ -141,9 +138,6 @@ flutter test
 
 # 构建 Windows
 flutter build windows
-
-# 构建 Android APK
-flutter build apk
 ```
 
 ## 常见问题
