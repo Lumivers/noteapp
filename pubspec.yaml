@@ -1,0 +1,60 @@
+name: noteapp
+description: A beautiful markdown note-taking app with AI integration.
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Core utilities
+  path_provider: ^2.1.1
+  shared_preferences: ^2.2.2
+  uuid: ^4.0.0
+
+  # Security
+  flutter_secure_storage: ^10.0.0
+
+  # Markdown and text
+  markdown: ^7.1.0
+  flutter_markdown: ^0.7.4+3
+
+  # HTTP and API
+  dio: ^5.3.1
+
+  # UI and fonts
+  google_fonts: ^8.0.2
+  cupertino_icons: ^1.0.2
+
+  # Export helpers
+  html: ^0.15.4
+
+  # State management (optional but recommended)
+  provider: ^6.1.0
+
+  # Search and tagging
+  fuzzy: ^0.5.1
+
+  # Native file/folder picker
+  file_selector: ^1.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  # assets:
+  #   - assets/
+  #   - assets/fonts/
+
+  # fonts:
+  #   - family: CustomFont
+  #     fonts:
+  #       - asset: assets/fonts/custom.ttf
