@@ -38,6 +38,7 @@ class _EditorScreenState extends State<EditorScreen> {
   late Future<List<Note>> _notesFuture;
   Timer? _saveDebounce;
   Timer? _sidebarDebounce;
+  Timer? _editorUiRefreshThrottle;
   bool _isSaving = false;
   bool _isSyncingScroll = false;
   bool _isAiProcessing = false;
@@ -47,6 +48,7 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _showPreview = true;
   bool _isSidebarCollapsed = false;
   String _sidebarQuery = '';
+  int _nonWhitespaceCharCount = 0;
 
   @override
   void initState() {
@@ -54,6 +56,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _currentNote = widget.initialNote;
     _titleController = TextEditingController(text: _currentNote.title);
     _contentController = TextEditingController(text: _currentNote.content);
+    _nonWhitespaceCharCount = _countNonWhitespaceChars(_currentNote.content);
     _editorScroll = ScrollController();
     _previewScroll = ScrollController();
     _loadNotes();
@@ -70,6 +73,7 @@ class _EditorScreenState extends State<EditorScreen> {
     _previewScroll.dispose();
     _saveDebounce?.cancel();
     _sidebarDebounce?.cancel();
+    _editorUiRefreshThrottle?.cancel();
     super.dispose();
   }
 
@@ -97,14 +101,18 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _saveNote({bool silent = false}) {
-    _isSaving = true;
-    setState(() {});
+    if (!silent) {
+      _isSaving = true;
+      setState(() {});
+    }
 
     widget.fileService.saveNote(_currentNote).then((_) {
       _isSaving = false;
       if (mounted) {
-        setState(() {});
-        _loadNotes();
+        if (!silent) {
+          setState(() {});
+          _loadNotes();
+        }
         if (!silent) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -131,6 +139,39 @@ class _EditorScreenState extends State<EditorScreen> {
       const Duration(seconds: 1),
       () => _saveNote(silent: true),
     );
+  }
+
+  void _handleEditorContentChanged(String value) {
+    _currentNote = _currentNote.copyWith(content: value);
+    _debouncedSave();
+    _scheduleEditorUiRefresh();
+  }
+
+  void _scheduleEditorUiRefresh() {
+    if (_editorUiRefreshThrottle?.isActive ?? false) {
+      return;
+    }
+    _editorUiRefreshThrottle = Timer(
+      const Duration(milliseconds: 120),
+      () {
+        if (!mounted) {
+          return;
+        }
+        _nonWhitespaceCharCount =
+            _countNonWhitespaceChars(_currentNote.content);
+        setState(() {});
+      },
+    );
+  }
+
+  int _countNonWhitespaceChars(String content) {
+    var count = 0;
+    for (final rune in content.runes) {
+      if (String.fromCharCode(rune).trim().isNotEmpty) {
+        count++;
+      }
+    }
+    return count;
   }
 
   Future<void> _handleAiAction(_AiAction action) async {
@@ -304,7 +345,7 @@ class _EditorScreenState extends State<EditorScreen> {
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('已进入 AI 变更审阅模式，请在编辑区逐块确认')), 
+      const SnackBar(content: Text('已进入 AI 变更审阅模式，请在编辑区逐块确认')),
     );
   }
 
@@ -312,6 +353,7 @@ class _EditorScreenState extends State<EditorScreen> {
     setState(() {
       _currentNote = _currentNote.copyWith(content: content);
       _contentController.text = content;
+      _nonWhitespaceCharCount = _countNonWhitespaceChars(content);
     });
     _debouncedSave();
   }
@@ -640,12 +682,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                   initialText: _currentNote.content,
                                   textController: _contentController,
                                   scrollController: _editorScroll,
-                                  onChanged: (value) {
-                                    _currentNote =
-                                        _currentNote.copyWith(content: value);
-                                    _debouncedSave();
-                                    setState(() {});
-                                  },
+                                  onChanged: _handleEditorContentChanged,
                                   onSave: (content) => _saveNote(),
                                 );
                               }
@@ -657,13 +694,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                   initialText: _currentNote.content,
                                   textController: _contentController,
                                   scrollController: _editorScroll,
-                                  onChanged: (value) {
-                                    _currentNote = _currentNote.copyWith(
-                                      content: value,
-                                    );
-                                    _debouncedSave();
-                                    setState(() {});
-                                  },
+                                  onChanged: _handleEditorContentChanged,
                                   onSave: (content) => _saveNote(),
                                 ),
                                 rightChild: _PreviewPane(
@@ -697,55 +728,67 @@ class _EditorScreenState extends State<EditorScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(Icons.rule_folder_outlined),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'AI 逐块审阅 · ${_pendingAiActionName ?? '改写'}',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700),
+          Expanded(
+            child: Scrollbar(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.rule_folder_outlined),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'AI 逐块审阅 · ${_pendingAiActionName ?? '改写'}',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Text('第 ${index + 1} / $total 块'),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _AiChangeBlockCard(
+                      index: index + 1,
+                      block: currentBlock,
+                      onToggle: (value) => _setCurrentBlockDecision(value),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: index > 0 ? _prevReviewBlock : null,
+                          icon: const Icon(Icons.arrow_back),
+                          label: const Text('上一块'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed:
+                              index < total - 1 ? _nextReviewBlock : null,
+                          icon: const Icon(Icons.arrow_forward),
+                          label: const Text('下一块'),
+                        ),
+                        const Spacer(),
+                        OutlinedButton(
+                          onPressed: _rejectCurrentAndNext,
+                          child: const Text('保留原文并下一条'),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: _acceptCurrentAndNext,
+                          child: const Text('采用 AI 并下一条'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              Text('第 ${index + 1} / $total 块'),
-            ],
+            ),
           ),
           const SizedBox(height: 10),
-          _AiChangeBlockCard(
-            index: index + 1,
-            block: currentBlock,
-            onToggle: (value) => _setCurrentBlockDecision(value),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: index > 0 ? _prevReviewBlock : null,
-                icon: const Icon(Icons.arrow_back),
-                label: const Text('上一块'),
-              ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: index < total - 1 ? _nextReviewBlock : null,
-                icon: const Icon(Icons.arrow_forward),
-                label: const Text('下一块'),
-              ),
-              const Spacer(),
-              OutlinedButton(
-                onPressed: _rejectCurrentAndNext,
-                child: const Text('保留原文并下一条'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _acceptCurrentAndNext,
-                child: const Text('采用 AI 并下一条'),
-              ),
-            ],
-          ),
-          const Spacer(),
           Row(
             children: [
               TextButton.icon(
@@ -789,9 +832,6 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   Widget _buildStatusBar() {
-    final text = _currentNote.content.replaceAll(RegExp(r'\s+'), '');
-    final count = text.runes.length;
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Row(
@@ -803,7 +843,7 @@ class _EditorScreenState extends State<EditorScreen> {
           const SizedBox(width: 8),
           _StatusChip(
             icon: Icons.text_fields,
-            label: '$count 字',
+            label: '$_nonWhitespaceCharCount 字',
           ),
           const Spacer(),
           _StatusChip(
@@ -964,7 +1004,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                   ? Theme.of(context)
                                       .colorScheme
                                       .primary
-                                    .withValues(alpha: 0.2)
+                                      .withValues(alpha: 0.2)
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                             ),
@@ -1000,7 +1040,7 @@ class _EditorScreenState extends State<EditorScreen> {
                               ? Theme.of(context)
                                   .colorScheme
                                   .primary
-                                .withValues(alpha: 0.16)
+                                  .withValues(alpha: 0.16)
                               : Colors.transparent,
                           borderRadius: BorderRadius.circular(12),
                         ),
